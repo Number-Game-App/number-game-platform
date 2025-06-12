@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guess the Number Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .game-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        input {
+            padding: 10px;
+            font-size: 16px;
+            width: 100px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #message {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #attempts {
+            margin-top: 10px;
+            color: #555;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Guess the Number Game</h1>
+    <div class="game-container">
+        <p>I'm thinking of a number between 1 and 100. Can you guess it?</p>
+        <div>
+            <input type="number" id="guessInput" min="1" max="100">
+            <button id="guessButton">Guess</button>
+        </div>
+        <div id="message"></div>
+        <div id="attempts">Attempts: 0</div>
+        <div id="status">Game status: <span id="gameStatus">In progress</span></div>
+        <button id="newGameButton" style="display:none; margin-top: 20px;">New Game</button>
+    </div>
+
+    <script>
+        // Game variables
+        let targetNumber;
+        let attempts = 0;
+        const maxNumber = 100;
+        
+        // DOM elements
+        const guessInput = document.getElementById('guessInput');
+        const guessButton = document.getElementById('guessButton');
+        const message = document.getElementById('message');
+        const attemptsDisplay = document.getElementById('attempts');
+        const gameStatus = document.getElementById('gameStatus');
+        const newGameButton = document.getElementById('newGameButton');
+        
+        // Initialize game
+        function initGame() {
+            targetNumber = Math.floor(Math.random() * maxNumber) + 1;
+            attempts = 0;
+            attemptsDisplay.textContent = `Attempts: ${attempts}`;
+            message.textContent = '';
+            gameStatus.textContent = 'In progress';
+            guessInput.value = '';
+            guessInput.disabled = false;
+            guessButton.disabled = false;
+            newGameButton.style.display = 'none';
+            
+            // Send game start metric to our monitoring endpoint
+            sendMetric('game_start', 1);
+        }
+        
+        // Check guess function
+        function checkGuess() {
+            // Get user's guess
+            const userGuess = parseInt(guessInput.value);
+            
+            // Validate input
+            if (isNaN(userGuess) || userGuess < 1 || userGuess > maxNumber) {
+                message.textContent = `Please enter a valid number between 1 and ${maxNumber}.`;
+                message.style.color = 'red';
+                return;
+            }
+            
+            // Increment attempts
+            attempts++;
+            attemptsDisplay.textContent = `Attempts: ${attempts}`;
+            
+            // Send attempt metric
+            sendMetric('game_attempt', 1);
+            
+            // Check guess
+            if (userGuess === targetNumber) {
+                message.textContent = `Congratulations! You guessed the number ${targetNumber} in ${attempts} attempts!`;
+                message.style.color = 'green';
+                gameStatus.textContent = 'Won';
+                guessInput.disabled = true;
+                guessButton.disabled = true;
+                newGameButton.style.display = 'inline-block';
+                
+                // Send game won metric
+                sendMetric('game_won', 1);
+                sendMetric('attempts_to_win', attempts);
+            } else if (userGuess < targetNumber) {
+                message.textContent = 'Too low! Try a higher number.';
+                message.style.color = 'blue';
+            } else {
+                message.textContent = 'Too high! Try a lower number.';
+                message.style.color = 'blue';
+            }
+        }
+        
+        // Function to send metrics to our monitoring endpoint
+        function sendMetric(name, value) {
+            // In a real application, this would send data to Prometheus
+            // For now, we'll just log to console
+            console.log(`METRIC: ${name} = ${value}`);
+            
+            // In a production environment, we might use something like:
+            /*
+            fetch('/metrics', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    value: value
+                })
+            });
+            */
+        }
+        
+        // Event listeners
+        guessButton.addEventListener('click', checkGuess);
+        guessInput.addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                checkGuess();
+            }
+        });
+        newGameButton.addEventListener('click', initGame);
+        
+        // Start the game
+        initGame();
+    </script>
+</body>
+</html>
