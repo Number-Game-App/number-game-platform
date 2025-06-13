@@ -44,6 +44,7 @@ jobs:
   build:
     name: 🏗️ Build Container
     runs-on: ubuntu-latest
+    environment: Production
     needs: test  # Only run if tests pass
     outputs:
       image-tag: ${{ steps.meta.outputs.IMAGE_TAG }}
