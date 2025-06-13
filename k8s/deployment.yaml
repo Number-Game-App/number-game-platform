@@ -5,7 +5,7 @@ metadata:
   labels:
     app: number-game
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: number-game
@@ -17,6 +17,6 @@ spec:
       containers:
       - name: nginx
         image: dockerakilesh/number-game:latest
- # Add this line
+
         ports:
         - containerPort: 80
