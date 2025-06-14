@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: dockerakilesh/number-game:latest
+        image: dockerakilesh/number-game:38970a0
 
         ports:
         - containerPort: 80
