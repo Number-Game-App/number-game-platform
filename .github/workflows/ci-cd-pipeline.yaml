@@ -46,34 +46,39 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     needs: test  # Only run if tests pass
+    env:
+      # Set environment variables that will be available to all subsequent jobs
+      SHORT_SHA: ${{ github.sha }}
+      BUILD_TIMESTAMP: ${{ github.run_number }}
     outputs:
-      # Use non-sensitive output names to avoid GitHub's secret masking
-      container-tag: ${{ steps.meta.outputs.CONTAINER_TAG }}
-      container-name: ${{ steps.meta.outputs.CONTAINER_NAME }}
+      # Keep only non-sensitive outputs for backwards compatibility
       short-sha: ${{ steps.meta.outputs.SHORT_SHA }}
-      build-version: ${{ steps.meta.outputs.BUILD_VERSION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract metadata
+      - name: Extract metadata and set environment
         id: meta
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BUILD_VERSION="${SHORT_SHA}-${TIMESTAMP}"
           
-          # Use output names that won't trigger GitHub's secret detection
+          # Set outputs for backwards compatibility
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "CONTAINER_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "CONTAINER_NAME=dockerakilesh/number-game" >> $GITHUB_OUTPUT
-          echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          
+          # Set environment variables for the workflow
+          echo "BUILT_IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
+          echo "BUILT_IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+          echo "BUILD_VERSION=${BUILD_VERSION}" >> $GITHUB_ENV
           
           # Debug: Print what we're setting
           echo "=== Build Job Metadata ==="
           echo "SHORT_SHA: ${SHORT_SHA}"
-          echo "CONTAINER_TAG: ${SHORT_SHA}"
-          echo "CONTAINER_NAME: dockerakilesh/number-game"
-          echo "BUILD_VERSION: ${SHORT_SHA}-${TIMESTAMP}"
+          echo "BUILT_IMAGE_TAG: ${SHORT_SHA}"
+          echo "BUILT_IMAGE_NAME: ${IMAGE_NAME}"
+          echo "BUILD_VERSION: ${BUILD_VERSION}"
+          echo "Full Image Reference: ${IMAGE_NAME}:${SHORT_SHA}"
           echo "=========================="
 
       - name: Set up Docker Buildx
@@ -92,16 +97,26 @@ jobs:
           platforms: linux/amd64,linux/arm64  
           push: true
           tags: |
-            ${{ steps.meta.outputs.CONTAINER_NAME }}:latest
-            ${{ steps.meta.outputs.CONTAINER_NAME }}:${{ steps.meta.outputs.CONTAINER_TAG }}
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ env.BUILT_IMAGE_TAG }}
           labels: |
             org.opencontainers.image.title=Number Game
             org.opencontainers.image.description=Guess the Number Game Microservice
-            org.opencontainers.image.version=${{ steps.meta.outputs.BUILD_VERSION }}
+            org.opencontainers.image.version=${{ env.BUILD_VERSION }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Export image reference for subsequent jobs
+        run: |
+          # Set the built image reference as a workflow environment variable
+          echo "SCANNED_IMAGE=${IMAGE_NAME}:${BUILT_IMAGE_TAG}" >> $GITHUB_ENV
+          
+          # Also write to a shared file that other jobs can source
+          echo "export SCANNED_IMAGE=${IMAGE_NAME}:${BUILT_IMAGE_TAG}" > /tmp/image_env.sh
+          echo "export BUILT_IMAGE_TAG=${BUILT_IMAGE_TAG}" >> /tmp/image_env.sh
+          echo "export BUILT_IMAGE_NAME=${IMAGE_NAME}" >> /tmp/image_env.sh
 
   # Job 3: Security Scanning
   security:
@@ -112,40 +127,51 @@ jobs:
       security-events: write
       actions: read
       contents: read
+    env:
+      # Inherit environment variables from previous jobs
+      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
+      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
     steps:
-      - name: Debug build job outputs
+      - name: Set up image reference
         run: |
+          # Construct the image reference from environment variables
+          SCANNED_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
+          echo "SCANNED_IMAGE=${SCANNED_IMAGE}" >> $GITHUB_ENV
+          
           echo "=== Security Job Debug ==="
-          echo "Received container-tag: '${{ needs.build.outputs.container-tag }}'"
-          echo "Received container-name: '${{ needs.build.outputs.container-name }}'"
-          echo "Received short-sha: '${{ needs.build.outputs.short-sha }}'"
-          echo "Full image reference: '${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}'"
+          echo "BUILT_IMAGE_TAG: '${BUILT_IMAGE_TAG}'"
+          echo "BUILT_IMAGE_NAME: '${BUILT_IMAGE_NAME}'"
+          echo "Constructed SCANNED_IMAGE: '${SCANNED_IMAGE}'"
           echo "=========================="
 
-      - name: Verify outputs are not empty
+      - name: Verify image reference is valid
         run: |
-          if [ -z "${{ needs.build.outputs.container-tag }}" ]; then
-            echo "ERROR: container-tag output is empty!"
+          if [ -z "$BUILT_IMAGE_TAG" ]; then
+            echo "ERROR: BUILT_IMAGE_TAG is empty!"
             exit 1
           fi
-          if [ -z "${{ needs.build.outputs.container-name }}" ]; then
-            echo "ERROR: container-name output is empty!"
+          if [ -z "$BUILT_IMAGE_NAME" ]; then
+            echo "ERROR: BUILT_IMAGE_NAME is empty!"
             exit 1
           fi
-          echo "✅ All required outputs are valid"
-          echo "Image to scan: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
+          if [ -z "$SCANNED_IMAGE" ]; then
+            echo "ERROR: SCANNED_IMAGE is empty!"
+            exit 1
+          fi
+          echo "✅ All image references are valid"
+          echo "Image to scan: $SCANNED_IMAGE"
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}
+          image-ref: ${{ env.SCANNED_IMAGE }}
           format: table
           exit-code: 0  # Don't fail on vulnerabilities for now
 
       - name: Run Trivy and generate SARIF
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}
+          image-ref: ${{ env.SCANNED_IMAGE }}
           format: sarif
           output: trivy-results.sarif
         continue-on-error: true
@@ -163,21 +189,26 @@ jobs:
     needs: [test, build, security]
     if: github.ref != 'refs/heads/main' && github.event_name == 'push'
     environment: development
+    env:
+      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
+      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Update Dev Kubernetes manifest
         run: |
-          FULL_IMAGE_REF="${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${FULL_IMAGE_REF}|" k8s/deployment.yaml
+          DEPLOYMENT_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
+          echo "Updating dev deployment with image: ${DEPLOYMENT_IMAGE}"
+          
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${DEPLOYMENT_IMAGE}|" k8s/deployment.yaml
           # Add dev-specific configurations
           sed -i 's|replicas: 1|replicas: 1|' k8s/deployment.yaml
 
       - name: Commit dev manifest changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🔧 [DEV] Update image tag to ${{ needs.build.outputs.short-sha }}"
+          commit_message: "🔧 [DEV] Update image tag to ${{ env.BUILT_IMAGE_TAG }}"
           file_pattern: k8s/deployment.yaml
           branch: ${{ github.head_ref }}
 
@@ -188,6 +219,9 @@ jobs:
     needs: [test, build, security]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production  # GitHub Environment protection
+    env:
+      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
+      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -196,26 +230,28 @@ jobs:
 
       - name: Update Production Kubernetes manifest
         run: |
-          FULL_IMAGE_REF="${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${FULL_IMAGE_REF}|" k8s/deployment.yaml
+          DEPLOYMENT_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
+          echo "Updating production deployment with image: ${DEPLOYMENT_IMAGE}"
+          
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${DEPLOYMENT_IMAGE}|" k8s/deployment.yaml
           # Production-specific configurations
           sed -i 's|replicas: 1|replicas: 3|' k8s/deployment.yaml
 
       - name: Commit production manifest changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🚀 [PROD] Update image tag to ${{ needs.build.outputs.short-sha }}"
-          file_parameter: k8s/deployment.yaml
+          commit_message: "🚀 [PROD] Update image tag to ${{ env.BUILT_IMAGE_TAG }}"
+          file_pattern: k8s/deployment.yaml
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ needs.build.outputs.short-sha }}
-          name: Release v${{ needs.build.outputs.short-sha }}
+          tag_name: v${{ env.BUILT_IMAGE_TAG }}
+          name: Release v${{ env.BUILT_IMAGE_TAG }}
           body: |
             🚀 **Production Deployment**
             
-            **Image:** `${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}`
+            **Image:** `${{ env.BUILT_IMAGE_NAME }}:${{ env.BUILT_IMAGE_TAG }}`
             **Commit:** ${{ github.sha }}
             **Changes:** ${{ github.event.head_commit.message }}
             
