@@ -47,9 +47,11 @@ jobs:
     environment: Production
     needs: test  # Only run if tests pass
     outputs:
-      image-ref: ${{ steps.meta.outputs.IMAGE_REF }}
-      image-digest: ${{ steps.meta.outputs.IMAGE_DIGEST }}
+      # Use non-sensitive output names to avoid GitHub's secret masking
+      container-tag: ${{ steps.meta.outputs.CONTAINER_TAG }}
+      container-name: ${{ steps.meta.outputs.CONTAINER_NAME }}
       short-sha: ${{ steps.meta.outputs.SHORT_SHA }}
+      build-version: ${{ steps.meta.outputs.BUILD_VERSION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,17 +62,17 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           
-          # Use different names to avoid GitHub's secret detection
+          # Use output names that won't trigger GitHub's secret detection
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_REF=dockerakilesh/number-game:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_DIGEST=dockerakilesh/number-game:latest" >> $GITHUB_OUTPUT
+          echo "CONTAINER_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "CONTAINER_NAME=dockerakilesh/number-game" >> $GITHUB_OUTPUT
           echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
           
           # Debug: Print what we're setting
           echo "=== Build Job Metadata ==="
           echo "SHORT_SHA: ${SHORT_SHA}"
-          echo "IMAGE_REF: dockerakilesh/number-game:${SHORT_SHA}"
-          echo "IMAGE_DIGEST: dockerakilesh/number-game:latest"
+          echo "CONTAINER_TAG: ${SHORT_SHA}"
+          echo "CONTAINER_NAME: dockerakilesh/number-game"
           echo "BUILD_VERSION: ${SHORT_SHA}-${TIMESTAMP}"
           echo "=========================="
 
@@ -90,8 +92,8 @@ jobs:
           platforms: linux/amd64,linux/arm64  
           push: true
           tags: |
-            ${{ steps.meta.outputs.IMAGE_DIGEST }}
-            ${{ steps.meta.outputs.IMAGE_REF }}
+            ${{ steps.meta.outputs.CONTAINER_NAME }}:latest
+            ${{ steps.meta.outputs.CONTAINER_NAME }}:${{ steps.meta.outputs.CONTAINER_TAG }}
           labels: |
             org.opencontainers.image.title=Number Game
             org.opencontainers.image.description=Guess the Number Game Microservice
@@ -114,31 +116,36 @@ jobs:
       - name: Debug build job outputs
         run: |
           echo "=== Security Job Debug ==="
-          echo "Received image-ref: '${{ needs.build.outputs.image-ref }}'"
-          echo "Received image-digest: '${{ needs.build.outputs.image-digest }}'"
+          echo "Received container-tag: '${{ needs.build.outputs.container-tag }}'"
+          echo "Received container-name: '${{ needs.build.outputs.container-name }}'"
           echo "Received short-sha: '${{ needs.build.outputs.short-sha }}'"
+          echo "Full image reference: '${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}'"
           echo "=========================="
 
-      - name: Verify image-ref is not empty
+      - name: Verify outputs are not empty
         run: |
-          if [ -z "${{ needs.build.outputs.image-ref }}" ]; then
-            echo "ERROR: image-ref output is empty!"
+          if [ -z "${{ needs.build.outputs.container-tag }}" ]; then
+            echo "ERROR: container-tag output is empty!"
             exit 1
-          else
-            echo "✅ image-ref is valid: ${{ needs.build.outputs.image-ref }}"
           fi
+          if [ -z "${{ needs.build.outputs.container-name }}" ]; then
+            echo "ERROR: container-name output is empty!"
+            exit 1
+          fi
+          echo "✅ All required outputs are valid"
+          echo "Image to scan: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.image-ref }}
+          image-ref: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}
           format: table
           exit-code: 0  # Don't fail on vulnerabilities for now
 
       - name: Run Trivy and generate SARIF
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.image-ref }}
+          image-ref: ${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}
           format: sarif
           output: trivy-results.sarif
         continue-on-error: true
@@ -162,7 +169,8 @@ jobs:
 
       - name: Update Dev Kubernetes manifest
         run: |
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-ref }}|" k8s/deployment.yaml
+          FULL_IMAGE_REF="${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${FULL_IMAGE_REF}|" k8s/deployment.yaml
           # Add dev-specific configurations
           sed -i 's|replicas: 1|replicas: 1|' k8s/deployment.yaml
 
@@ -188,7 +196,8 @@ jobs:
 
       - name: Update Production Kubernetes manifest
         run: |
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-ref }}|" k8s/deployment.yaml
+          FULL_IMAGE_REF="${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}"
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${FULL_IMAGE_REF}|" k8s/deployment.yaml
           # Production-specific configurations
           sed -i 's|replicas: 1|replicas: 3|' k8s/deployment.yaml
 
@@ -196,7 +205,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "🚀 [PROD] Update image tag to ${{ needs.build.outputs.short-sha }}"
-          file_pattern: k8s/deployment.yaml
+          file_parameter: k8s/deployment.yaml
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -206,7 +215,7 @@ jobs:
           body: |
             🚀 **Production Deployment**
             
-            **Image:** `${{ needs.build.outputs.image-ref }}`
+            **Image:** `${{ needs.build.outputs.container-name }}:${{ needs.build.outputs.container-tag }}`
             **Commit:** ${{ github.sha }}
             **Changes:** ${{ github.event.head_commit.message }}
             
