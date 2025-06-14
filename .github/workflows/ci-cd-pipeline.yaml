@@ -39,7 +39,7 @@ jobs:
           node -c application/index.html 2>/dev/null || echo "JS syntax check completed"
 
   build:
-    name: 🏗️ Build Container
+    name: 🏗️ Build Container 
     runs-on: ubuntu-latest
     environment: Production
     needs: test
@@ -90,7 +90,7 @@ jobs:
 
 
   deploy-dev:
-    name: 🚀 Deploy to Dev
+    name: 🚀 Deploy to Dev 
     runs-on: ubuntu-latest
     needs: [test, build, security]
     if: github.ref != 'refs/heads/main' && github.event_name == 'push'
