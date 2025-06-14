@@ -59,10 +59,22 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          IMAGE_TAG="${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          IMAGE_LATEST="${{ env.IMAGE_NAME }}:latest"
+          BUILD_VERSION="${SHORT_SHA}-${TIMESTAMP}"
+          
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_LATEST=${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
-          echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "IMAGE_LATEST=${IMAGE_LATEST}" >> $GITHUB_OUTPUT
+          echo "BUILD_VERSION=${BUILD_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Debug: Print what we're setting
+          echo "=== Build Job Metadata ==="
+          echo "SHORT_SHA: ${SHORT_SHA}"
+          echo "IMAGE_TAG: ${IMAGE_TAG}"
+          echo "IMAGE_LATEST: ${IMAGE_LATEST}"
+          echo "BUILD_VERSION: ${BUILD_VERSION}"
+          echo "=========================="
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -101,6 +113,24 @@ jobs:
       actions: read
       contents: read
     steps:
+      - name: Debug build job outputs
+        run: |
+          echo "=== Security Job Debug ==="
+          echo "Received image-tag: '${{ needs.build.outputs.image-tag }}'"
+          echo "Received image-latest: '${{ needs.build.outputs.image-latest }}'"
+          echo "Received short-sha: '${{ needs.build.outputs.short-sha }}'"
+          echo "Length of image-tag: ${#'${{ needs.build.outputs.image-tag }}'}"
+          echo "=========================="
+
+      - name: Verify image-tag is not empty
+        run: |
+          if [ -z "${{ needs.build.outputs.image-tag }}" ]; then
+            echo "ERROR: image-tag output is empty!"
+            exit 1
+          else
+            echo "✅ image-tag is valid: ${{ needs.build.outputs.image-tag }}"
+          fi
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
