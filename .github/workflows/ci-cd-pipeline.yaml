@@ -48,6 +48,7 @@ jobs:
     needs: test  # Only run if tests pass
     outputs:
       image-tag: ${{ steps.meta.outputs.IMAGE_TAG }}
+      image-latest: ${{ steps.meta.outputs.IMAGE_LATEST }}
       short-sha: ${{ steps.meta.outputs.SHORT_SHA }}
     steps:
       - name: Checkout code
@@ -59,8 +60,8 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${IMAGE_NAME}:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_LATEST=${IMAGE_NAME}:latest" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_LATEST=${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
           echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
@@ -116,7 +117,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
@@ -134,7 +135,7 @@ jobs:
 
       - name: Update Dev Kubernetes manifest
         run: |
-          sed -i "s|image: ${IMAGE_NAME}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
           # Add dev-specific configurations
           sed -i 's|replicas: 1|replicas: 1|' k8s/deployment.yaml
 
@@ -160,7 +161,7 @@ jobs:
 
       - name: Update Production Kubernetes manifest
         run: |
-          sed -i "s|image: ${IMAGE_NAME}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
           # Production-specific configurations
           sed -i 's|replicas: 1|replicas: 3|' k8s/deployment.yaml
 
@@ -171,12 +172,10 @@ jobs:
           file_pattern: k8s/deployment.yaml
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.build.outputs.short-sha }}
-          release_name: Release v${{ needs.build.outputs.short-sha }}
+          name: Release v${{ needs.build.outputs.short-sha }}
           body: |
             🚀 **Production Deployment**
             
@@ -185,8 +184,6 @@ jobs:
             **Changes:** ${{ github.event.head_commit.message }}
             
             **Deployed to:** https://game.local
-          draft: false
-          prerelease: false
 
   # Job 6: Notification & Monitoring
   notify:
