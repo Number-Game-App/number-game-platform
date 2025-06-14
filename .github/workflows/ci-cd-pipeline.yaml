@@ -56,11 +56,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          IMAGE_TAG="${{ env.IMAGE_NAME }}:${SHORT_SHA}"
-          IMAGE_LATEST="${{ env.IMAGE_NAME }}:latest"
+          IMAGE_TAG="${IMAGE_NAME}:${SHORT_SHA}"
+          IMAGE_LATEST="${IMAGE_NAME}:latest"
           BUILD_VERSION="${SHORT_SHA}-${TIMESTAMP}"
           
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
@@ -70,6 +72,7 @@ jobs:
           
           # Debug: Print what we're setting
           echo "=== Build Job Metadata ==="
+          echo "IMAGE_NAME from env: ${IMAGE_NAME}"
           echo "SHORT_SHA: ${SHORT_SHA}"
           echo "IMAGE_TAG: ${IMAGE_TAG}"
           echo "IMAGE_LATEST: ${IMAGE_LATEST}"
@@ -119,7 +122,6 @@ jobs:
           echo "Received image-tag: '${{ needs.build.outputs.image-tag }}'"
           echo "Received image-latest: '${{ needs.build.outputs.image-latest }}'"
           echo "Received short-sha: '${{ needs.build.outputs.short-sha }}'"
-          echo "Length of image-tag: ${#'${{ needs.build.outputs.image-tag }}'}"
           echo "=========================="
 
       - name: Verify image-tag is not empty
