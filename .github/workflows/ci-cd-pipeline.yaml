@@ -56,27 +56,22 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        env:
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          IMAGE_TAG="${IMAGE_NAME}:${SHORT_SHA}"
-          IMAGE_LATEST="${IMAGE_NAME}:latest"
-          BUILD_VERSION="${SHORT_SHA}-${TIMESTAMP}"
           
+          # Direct assignment - no environment variable interpolation
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "IMAGE_LATEST=${IMAGE_LATEST}" >> $GITHUB_OUTPUT
-          echo "BUILD_VERSION=${BUILD_VERSION}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=dockerakilesh/number-game:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_LATEST=dockerakilesh/number-game:latest" >> $GITHUB_OUTPUT
+          echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
           
           # Debug: Print what we're setting
           echo "=== Build Job Metadata ==="
-          echo "IMAGE_NAME from env: ${IMAGE_NAME}"
           echo "SHORT_SHA: ${SHORT_SHA}"
-          echo "IMAGE_TAG: ${IMAGE_TAG}"
-          echo "IMAGE_LATEST: ${IMAGE_LATEST}"
-          echo "BUILD_VERSION: ${BUILD_VERSION}"
+          echo "IMAGE_TAG: dockerakilesh/number-game:${SHORT_SHA}"
+          echo "IMAGE_LATEST: dockerakilesh/number-game:latest"
+          echo "BUILD_VERSION: ${SHORT_SHA}-${TIMESTAMP}"
           echo "=========================="
 
       - name: Set up Docker Buildx
