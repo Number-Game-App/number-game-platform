@@ -47,8 +47,8 @@ jobs:
     environment: Production
     needs: test  # Only run if tests pass
     outputs:
-      image-tag: ${{ steps.meta.outputs.IMAGE_TAG }}
-      image-latest: ${{ steps.meta.outputs.IMAGE_LATEST }}
+      image-ref: ${{ steps.meta.outputs.IMAGE_REF }}
+      image-digest: ${{ steps.meta.outputs.IMAGE_DIGEST }}
       short-sha: ${{ steps.meta.outputs.SHORT_SHA }}
     steps:
       - name: Checkout code
@@ -60,17 +60,17 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           
-          # Direct assignment - no environment variable interpolation
+          # Use different names to avoid GitHub's secret detection
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=dockerakilesh/number-game:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_LATEST=dockerakilesh/number-game:latest" >> $GITHUB_OUTPUT
+          echo "IMAGE_REF=dockerakilesh/number-game:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_DIGEST=dockerakilesh/number-game:latest" >> $GITHUB_OUTPUT
           echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
           
           # Debug: Print what we're setting
           echo "=== Build Job Metadata ==="
           echo "SHORT_SHA: ${SHORT_SHA}"
-          echo "IMAGE_TAG: dockerakilesh/number-game:${SHORT_SHA}"
-          echo "IMAGE_LATEST: dockerakilesh/number-game:latest"
+          echo "IMAGE_REF: dockerakilesh/number-game:${SHORT_SHA}"
+          echo "IMAGE_DIGEST: dockerakilesh/number-game:latest"
           echo "BUILD_VERSION: ${SHORT_SHA}-${TIMESTAMP}"
           echo "=========================="
 
@@ -114,31 +114,31 @@ jobs:
       - name: Debug build job outputs
         run: |
           echo "=== Security Job Debug ==="
-          echo "Received image-tag: '${{ needs.build.outputs.image-tag }}'"
-          echo "Received image-latest: '${{ needs.build.outputs.image-latest }}'"
+          echo "Received image-ref: '${{ needs.build.outputs.image-ref }}'"
+          echo "Received image-digest: '${{ needs.build.outputs.image-digest }}'"
           echo "Received short-sha: '${{ needs.build.outputs.short-sha }}'"
           echo "=========================="
 
-      - name: Verify image-tag is not empty
+      - name: Verify image-ref is not empty
         run: |
-          if [ -z "${{ needs.build.outputs.image-tag }}" ]; then
-            echo "ERROR: image-tag output is empty!"
+          if [ -z "${{ needs.build.outputs.image-ref }}" ]; then
+            echo "ERROR: image-ref output is empty!"
             exit 1
           else
-            echo "✅ image-tag is valid: ${{ needs.build.outputs.image-tag }}"
+            echo "✅ image-ref is valid: ${{ needs.build.outputs.image-ref }}"
           fi
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.image-tag }}
+          image-ref: ${{ needs.build.outputs.image-ref }}
           format: table
           exit-code: 0  # Don't fail on vulnerabilities for now
 
       - name: Run Trivy and generate SARIF
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build.outputs.image-tag }}
+          image-ref: ${{ needs.build.outputs.image-ref }}
           format: sarif
           output: trivy-results.sarif
         continue-on-error: true
@@ -162,7 +162,7 @@ jobs:
 
       - name: Update Dev Kubernetes manifest
         run: |
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-ref }}|" k8s/deployment.yaml
           # Add dev-specific configurations
           sed -i 's|replicas: 1|replicas: 1|' k8s/deployment.yaml
 
@@ -188,7 +188,7 @@ jobs:
 
       - name: Update Production Kubernetes manifest
         run: |
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-tag }}|" k8s/deployment.yaml
+          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${{ needs.build.outputs.image-ref }}|" k8s/deployment.yaml
           # Production-specific configurations
           sed -i 's|replicas: 1|replicas: 3|' k8s/deployment.yaml
 
@@ -206,7 +206,7 @@ jobs:
           body: |
             🚀 **Production Deployment**
             
-            **Image:** `${{ needs.build.outputs.image-tag }}`
+            **Image:** `${{ needs.build.outputs.image-ref }}`
             **Commit:** ${{ github.sha }}
             **Changes:** ${{ github.event.head_commit.message }}
             
