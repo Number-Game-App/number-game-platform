@@ -90,8 +90,8 @@ jobs:
           platforms: linux/amd64,linux/arm64  
           push: true
           tags: |
-            ${{ steps.meta.outputs.IMAGE_LATEST }}
-            ${{ steps.meta.outputs.IMAGE_TAG }}
+            ${{ steps.meta.outputs.IMAGE_DIGEST }}
+            ${{ steps.meta.outputs.IMAGE_REF }}
           labels: |
             org.opencontainers.image.title=Number Game
             org.opencontainers.image.description=Guess the Number Game Microservice
