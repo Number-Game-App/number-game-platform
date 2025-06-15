@@ -6,13 +6,14 @@ on:
   pull_request:
     branches: [main, develop]
 
-  permissions:
-    contents: write          
-    packages: write         
-    security-events: write  
-    actions: read          
-    issues: write          
-    pull-requests: write   
+# Essential permissions for full workflow
+permissions:
+  contents: write          
+  packages: write        
+  security-events: write  
+  actions: read        
+  issues: write          
+  pull-requests: write   
 
 env:
   REGISTRY: docker.io
