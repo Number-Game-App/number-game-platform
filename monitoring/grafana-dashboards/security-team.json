@@ -1,0 +1,138 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Number Game - Security Team",
+    "tags": ["security", "compliance", "monitoring", "threats"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "description": "Security metrics and compliance monitoring for security team",
+    "panels": [
+      {
+        "id": 1,
+        "title": "🔒 Security Status",
+        "type": "row",
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Container Security",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 1},
+        "targets": [
+          {
+            "expr": "up{job=\"number-game\"}",
+            "legendFormat": "Secure Container"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"options": {"0": {"text": "FAILED", "color": "red"}}, "type": "value"},
+              {"options": {"1": {"text": "SECURE", "color": "green"}}, "type": "value"}
+            ]
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Failed Requests",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 1},
+        "targets": [
+          {
+            "expr": "increase(http_requests_total{status=~\"4..|5..\"}[1h])",
+            "legendFormat": "Failed Requests/Hour"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "TLS Status",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 1},
+        "targets": [
+          {
+            "expr": "probe_ssl_earliest_cert_expiry - time()",
+            "legendFormat": "Cert Expires (days)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "dtdurations",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 604800},
+                {"color": "green", "value": 2592000}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Pod Security",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 1},
+        "targets": [
+          {
+            "expr": "kube_pod_container_status_running{pod=~\"number-game.*\"}",
+            "legendFormat": "Secure Pods Running"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "🚨 Security Events",
+        "type": "row",
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}
+      },
+      {
+        "id": 7,
+        "title": "HTTP Status Codes",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=\"200\"}[5m])",
+            "legendFormat": "200 OK"
+          },
+          {
+            "expr": "rate(http_requests_total{status=\"404\"}[5m])",
+            "legendFormat": "404 Not Found"
+          },
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+            "legendFormat": "5xx Server Errors"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Security Compliance Score",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "95",
+            "legendFormat": "Compliance %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 100,
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 80},
+                {"color": "green", "value": 95}
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

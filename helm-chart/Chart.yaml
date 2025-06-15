@@ -1,0 +1,15 @@
+apiVersion: v2
+name: number-game
+description: Enterprise Number Guessing Game with Monitoring
+type: application
+version: 0.2.0
+appVersion: "2.0"
+keywords:
+  - game
+  - monitoring
+  - prometheus
+  - devops
+home: https://github.com/Number-Game-App/number-game-platform
+sources:
+  - https://github.com/Number-Game-App/number-game-platform
+
