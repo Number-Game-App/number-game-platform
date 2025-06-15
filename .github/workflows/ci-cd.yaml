@@ -137,48 +137,48 @@ jobs:
             echo "✅ Security scan finished for ${{ needs.build.outputs.image-tag }}"
 
   # Job 4: Update GitOps Repository
- update-gitops:
-    name: 🔄 Update GitOps Repo
-    runs-on: ubuntu-latest
-    needs: [test, build, security]
-    if: github.event_name == 'push'
-    steps:
-      - name: Checkout GitOps repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.CONFIG_REPO }}
-          token: ${{ secrets.GITHUB_TOKEN }} 
-          path: gitops-repo
+  update-gitops:
+      name: 🔄 Update GitOps Repo
+      runs-on: ubuntu-latest
+      needs: [test, build, security]
+      if: github.event_name == 'push'
+      steps:
+        - name: Checkout GitOps repository
+          uses: actions/checkout@v4
+          with:
+            repository: ${{ env.CONFIG_REPO }}
+            token: ${{ secrets.GITHUB_TOKEN }} 
+            path: gitops-repo
 
-      - name: Update deployment configuration
-        run: |
-          cd gitops-repo
-          
-          ENVIRONMENT="${{ needs.build.outputs.environment }}"
-          SHORT_SHA="${{ needs.build.outputs.short-sha }}"
-          
-          echo "Updating ${ENVIRONMENT} environment..."
-          
-          # Update the Helm values file for the specific environment
-          if [[ "$ENVIRONMENT" == "production" ]]; then
-            sed -i "s|tag: \".*\"|tag: \"latest\"|" environments/production/values.yaml
-          elif [[ "$ENVIRONMENT" == "development" ]]; then
-            sed -i "s|tag: \".*\"|tag: \"dev-${SHORT_SHA}\"|" environments/development/values.yaml
-          fi
-          
-          # Configure git
-          git config --local user.email "gitops@company.com"
-          git config --local user.name "GitOps Bot"
-          
-          # Commit and push changes
-          git add .
-          git commit -m "🚀 Update ${ENVIRONMENT} to ${{ needs.build.outputs.image-tag }}
+        - name: Update deployment configuration
+          run: |
+            cd gitops-repo
+            
+            ENVIRONMENT="${{ needs.build.outputs.environment }}"
+            SHORT_SHA="${{ needs.build.outputs.short-sha }}"
+            
+            echo "Updating ${ENVIRONMENT} environment..."
+            
+            # Update the Helm values file for the specific environment
+            if [[ "$ENVIRONMENT" == "production" ]]; then
+              sed -i "s|tag: \".*\"|tag: \"latest\"|" environments/production/values.yaml
+            elif [[ "$ENVIRONMENT" == "development" ]]; then
+              sed -i "s|tag: \".*\"|tag: \"dev-${SHORT_SHA}\"|" environments/development/values.yaml
+            fi
+            
+            # Configure git
+            git config --local user.email "gitops@company.com"
+            git config --local user.name "GitOps Bot"
+            
+            # Commit and push changes
+            git add .
+            git commit -m "🚀 Update ${ENVIRONMENT} to ${{ needs.build.outputs.image-tag }}
 
-          Source commit: ${{ github.sha }}
-          Triggered by: ${{ github.actor }}
-          Build: ${{ github.run_number }}" || echo "No changes to commit"
-          
-          git push
+            Source commit: ${{ github.sha }}
+            Triggered by: ${{ github.actor }}
+            Build: ${{ github.run_number }}" || echo "No changes to commit"
+            
+            git push
 
   # Job 5: Create Release (Production only)
   release:
