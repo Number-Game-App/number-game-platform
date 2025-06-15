@@ -54,29 +54,29 @@ jobs:
         id: meta
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          BRANCH_NAME=${GITHUB_REF##*/}
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
           if [[ "$BRANCH_NAME" == "main" ]]; then
             ENVIRONMENT="production"
-            IMAGE_TAG="${IMAGE_NAME}:${SHORT_SHA}"
+            TAG="latest"
           elif [[ "$BRANCH_NAME" == "develop" ]]; then
             ENVIRONMENT="development"
-            IMAGE_TAG="${IMAGE_NAME}:dev-${SHORT_SHA}"
+            TAG="dev-${SHORT_SHA}"
           else
-            ENVIRONMENT="development"
-            IMAGE_TAG="${IMAGE_NAME}:feature-${SHORT_SHA}"
+            ENVIRONMENT="feature"
+            TAG="feat-${SHORT_SHA}"
           fi
+
+          IMAGE_TAG="${IMAGE_NAME}:${TAG}"
 
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT=${ENVIRONMENT}" >> $GITHUB_OUTPUT
           echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
 
-          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
+          # Save to GITHUB_ENV for later jobs
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
-          echo "ENVIRONMENT=${ENVIRONMENT}" >> $GITHUB_ENV
-          echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_ENV
 
           
           echo "=== Build Metadata ==="
