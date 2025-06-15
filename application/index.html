@@ -54,6 +54,13 @@
             margin-top: 20px;
             font-size: 16px;
         }
+        .metrics-info {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #e8f4f8;
+            border-radius: 5px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -70,11 +77,33 @@
         <button id="newGameButton" style="display:none; margin-top: 20px;">New Game</button>
     </div>
 
+    <div class="metrics-info">
+        <strong>📊 Monitoring Enabled</strong><br>
+        Game metrics are being collected for Prometheus monitoring.<br>
+        <a href="/metrics" target="_blank">View Raw Metrics</a>
+    </div>
+
     <script>
         // Game variables
         let targetNumber;
         let attempts = 0;
         const maxNumber = 100;
+        let gameStartTime;
+        
+        // Metrics storage
+        let gameMetrics = {
+            gamesStarted: 0,
+            gamesWon: 0,
+            totalAttempts: 0,
+            totalGameTime: 0,
+            currentGameStartTime: null
+        };
+
+        // Load existing metrics from localStorage if available
+        const savedMetrics = localStorage.getItem('gameMetrics');
+        if (savedMetrics) {
+            gameMetrics = { ...gameMetrics, ...JSON.parse(savedMetrics) };
+        }
         
         // DOM elements
         const guessInput = document.getElementById('guessInput');
@@ -88,6 +117,10 @@
         function initGame() {
             targetNumber = Math.floor(Math.random() * maxNumber) + 1;
             attempts = 0;
+            gameStartTime = Date.now();
+            gameMetrics.currentGameStartTime = gameStartTime;
+            gameMetrics.gamesStarted++;
+            
             attemptsDisplay.textContent = `Attempts: ${attempts}`;
             message.textContent = '';
             gameStatus.textContent = 'In progress';
@@ -96,31 +129,31 @@
             guessButton.disabled = false;
             newGameButton.style.display = 'none';
             
-            // Send game start metric to our monitoring endpoint
-            sendMetric('game_start', 1);
+            // Send metrics to server
+            sendMetricToServer('games_started_total', gameMetrics.gamesStarted);
+            updateMetricsEndpoint();
+            saveMetrics();
         }
         
         // Check guess function
         function checkGuess() {
-            // Get user's guess
             const userGuess = parseInt(guessInput.value);
             
-            // Validate input
             if (isNaN(userGuess) || userGuess < 1 || userGuess > maxNumber) {
                 message.textContent = `Please enter a valid number between 1 and ${maxNumber}.`;
                 message.style.color = 'red';
                 return;
             }
             
-            // Increment attempts
             attempts++;
+            gameMetrics.totalAttempts++;
             attemptsDisplay.textContent = `Attempts: ${attempts}`;
             
-            // Send attempt metric
-            sendMetric('game_attempt', 1);
-            
-            // Check guess
             if (userGuess === targetNumber) {
+                const gameTime = Date.now() - gameStartTime;
+                gameMetrics.gamesWon++;
+                gameMetrics.totalGameTime += gameTime;
+                
                 message.textContent = `Congratulations! You guessed the number ${targetNumber} in ${attempts} attempts!`;
                 message.style.color = 'green';
                 gameStatus.textContent = 'Won';
@@ -128,9 +161,11 @@
                 guessButton.disabled = true;
                 newGameButton.style.display = 'inline-block';
                 
-                // Send game won metric
-                sendMetric('game_won', 1);
-                sendMetric('attempts_to_win', attempts);
+                // Send win metrics
+                sendMetricToServer('games_won_total', gameMetrics.gamesWon);
+                sendMetricToServer('game_duration_seconds', gameTime / 1000);
+                sendMetricToServer('game_attempts', attempts);
+                
             } else if (userGuess < targetNumber) {
                 message.textContent = 'Too low! Try a higher number.';
                 message.style.color = 'blue';
@@ -138,27 +173,96 @@
                 message.textContent = 'Too high! Try a lower number.';
                 message.style.color = 'blue';
             }
+            
+            updateMetricsEndpoint();
+            saveMetrics();
         }
         
-        // Function to send metrics to our monitoring endpoint
-        function sendMetric(name, value) {
-            // In a real application, this would send data to Prometheus
-            // For now, we'll just log to console
-            console.log(`METRIC: ${name} = ${value}`);
+        // Save metrics to localStorage
+        function saveMetrics() {
+            localStorage.setItem('gameMetrics', JSON.stringify(gameMetrics));
+        }
+        
+        // Send individual metric to server (placeholder for real implementation)
+        function sendMetricToServer(metricName, value) {
+            console.log(`METRIC: ${metricName} = ${value}`);
             
-            // In a production environment, we might use something like:
-            /*
-            fetch('/metrics', {
+            // In production, this would POST to your metrics endpoint
+            fetch('/api/metrics', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: name,
-                    value: value
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: metricName, value: value })
+            }).catch(() => {
+                // Silently handle errors since this is just a demo
             });
-            */
+        }
+        
+        // Update the /metrics endpoint content
+        function updateMetricsEndpoint() {
+            const avgAttempts = gameMetrics.gamesStarted > 0 ? 
+                (gameMetrics.totalAttempts / gameMetrics.gamesStarted).toFixed(2) : 0;
+            const winRate = gameMetrics.gamesStarted > 0 ? 
+                (gameMetrics.gamesWon / gameMetrics.gamesStarted * 100).toFixed(2) : 0;
+            const avgGameTime = gameMetrics.gamesWon > 0 ? 
+                (gameMetrics.totalGameTime / gameMetrics.gamesWon / 1000).toFixed(2) : 0;
+            
+            // Store metrics in a global variable that can be accessed by /metrics endpoint
+            window.currentMetrics = {
+                games_started_total: gameMetrics.gamesStarted,
+                games_won_total: gameMetrics.gamesWon,
+                games_lost_total: gameMetrics.gamesStarted - gameMetrics.gamesWon,
+                total_attempts: gameMetrics.totalAttempts,
+                average_attempts_per_game: avgAttempts,
+                win_rate_percentage: winRate,
+                average_game_duration_seconds: avgGameTime,
+                current_games_in_progress: gameMetrics.currentGameStartTime ? 1 : 0
+            };
+        }
+        
+        // Expose metrics endpoint
+        function handleMetricsRequest() {
+            updateMetricsEndpoint();
+            const metrics = window.currentMetrics || {};
+            
+            let prometheusFormat = `# HELP games_started_total Number of games started
+# TYPE games_started_total counter
+games_started_total ${metrics.games_started_total || 0}
+
+# HELP games_won_total Number of games won
+# TYPE games_won_total counter
+games_won_total ${metrics.games_won_total || 0}
+
+# HELP games_lost_total Number of games lost
+# TYPE games_lost_total counter
+games_lost_total ${metrics.games_lost_total || 0}
+
+# HELP total_attempts Total number of attempts across all games
+# TYPE total_attempts counter
+total_attempts ${metrics.total_attempts || 0}
+
+# HELP average_attempts_per_game Average attempts per game
+# TYPE average_attempts_per_game gauge
+average_attempts_per_game ${metrics.average_attempts_per_game || 0}
+
+# HELP win_rate_percentage Win rate as percentage
+# TYPE win_rate_percentage gauge
+win_rate_percentage ${metrics.win_rate_percentage || 0}
+
+# HELP average_game_duration_seconds Average game duration in seconds
+# TYPE average_game_duration_seconds gauge
+average_game_duration_seconds ${metrics.average_game_duration_seconds || 0}
+
+# HELP current_games_in_progress Games currently being played
+# TYPE current_games_in_progress gauge
+current_games_in_progress ${metrics.current_games_in_progress || 0}
+`;
+            
+            return prometheusFormat;
+        }
+        
+        // Handle /metrics route (simple implementation)
+        if (window.location.pathname === '/metrics') {
+            document.body.innerHTML = `<pre>${handleMetricsRequest()}</pre>`;
         }
         
         // Event listeners

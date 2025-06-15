@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: number-game-service  
+  labels:
+    app: number-game
+spec:
+  type: NodePort
+  selector:
+    app: number-game
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80

@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: GitOps Pipeline with ArgoCD
 
 on:
   push:
@@ -9,9 +9,10 @@ on:
 env:
   REGISTRY: docker.io
   IMAGE_NAME: dockerakilesh/number-game
+  CONFIG_REPO: "YOUR_USERNAME/number-game-config"  # Replace with your username
 
 jobs:
-  # Job 1: Code Quality & Testing (Fastest - Fail Fast)
+  # Job 1: Code Quality & Testing
   test:
     name: 🧪 Test & Lint
     runs-on: ubuntu-latest
@@ -30,56 +31,37 @@ jobs:
           dockerfile: Dockerfile
           failure-threshold: error
 
-      - name: Check YAML files
-        run: |
-          sudo apt-get install -y yamllint
-          yamllint k8s/ || echo "YAML lint completed"
-
       - name: Test JavaScript functionality
         run: |
-          # Basic syntax check for JS
           node -c application/index.html 2>/dev/null || echo "JS syntax check completed"
 
-  # Job 2: Build & Containerize
+  # Job 2: Build & Push Container
   build:
-    name: 🏗️ Build Container 
+    name: 🏗️ Build Container
     runs-on: ubuntu-latest
     environment: Production
-    needs: test  # Only run if tests pass
-    env:
-      # Set environment variables that will be available to all subsequent jobs
-      SHORT_SHA: ${{ github.sha }}
-      BUILD_TIMESTAMP: ${{ github.run_number }}
+    needs: test
     outputs:
-      # Keep only non-sensitive outputs for backwards compatibility
       short-sha: ${{ steps.meta.outputs.SHORT_SHA }}
+      image-tag: ${{ steps.meta.outputs.IMAGE_TAG }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract metadata and set environment
+      - name: Extract metadata
         id: meta
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          BUILD_VERSION="${SHORT_SHA}-${TIMESTAMP}"
-          
-          # Set outputs for backwards compatibility
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_NAME}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_LATEST=${IMAGE_NAME}:latest" >> $GITHUB_OUTPUT
+          echo "BUILD_VERSION=${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
           
-          # Set environment variables for the workflow
-          echo "BUILT_IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
-          echo "BUILT_IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
-          echo "BUILD_VERSION=${BUILD_VERSION}" >> $GITHUB_ENV
-          
-          # Debug: Print what we're setting
-          echo "=== Build Job Metadata ==="
+          echo "=== Build Metadata ==="
           echo "SHORT_SHA: ${SHORT_SHA}"
-          echo "BUILT_IMAGE_TAG: ${SHORT_SHA}"
-          echo "BUILT_IMAGE_NAME: ${IMAGE_NAME}"
-          echo "BUILD_VERSION: ${BUILD_VERSION}"
-          echo "Full Image Reference: ${IMAGE_NAME}:${SHORT_SHA}"
-          echo "=========================="
+          echo "IMAGE_TAG: ${IMAGE_NAME}:${SHORT_SHA}"
+          echo "======================="
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -94,29 +76,19 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64  
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.BUILT_IMAGE_TAG }}
+            ${{ steps.meta.outputs.IMAGE_LATEST }}
+            ${{ steps.meta.outputs.IMAGE_TAG }}
           labels: |
             org.opencontainers.image.title=Number Game
-            org.opencontainers.image.description=Guess the Number Game Microservice
-            org.opencontainers.image.version=${{ env.BUILD_VERSION }}
+            org.opencontainers.image.description=Guess the Number Game with Prometheus Metrics
+            org.opencontainers.image.version=${{ steps.meta.outputs.BUILD_VERSION }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Export image reference for subsequent jobs
-        run: |
-          # Set the built image reference as a workflow environment variable
-          echo "SCANNED_IMAGE=${IMAGE_NAME}:${BUILT_IMAGE_TAG}" >> $GITHUB_ENV
-          
-          # Also write to a shared file that other jobs can source
-          echo "export SCANNED_IMAGE=${IMAGE_NAME}:${BUILT_IMAGE_TAG}" > /tmp/image_env.sh
-          echo "export BUILT_IMAGE_TAG=${BUILT_IMAGE_TAG}" >> /tmp/image_env.sh
-          echo "export BUILT_IMAGE_NAME=${IMAGE_NAME}" >> /tmp/image_env.sh
 
   # Job 3: Security Scanning
   security:
@@ -126,137 +98,148 @@ jobs:
     permissions:
       actions: read
       contents: read
-    env:
-      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
-      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
     steps:
-      - name: Set up image reference
-        run: |
-          SCANNED_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
-          echo "SCANNED_IMAGE=${SCANNED_IMAGE}" >> $GITHUB_ENV
-          echo "BUILT_IMAGE_TAG: '${BUILT_IMAGE_TAG}'"
-          echo "BUILT_IMAGE_NAME: '${BUILT_IMAGE_NAME}'"
-          echo "Constructed SCANNED_IMAGE: '${SCANNED_IMAGE}'"
-
-      - name: Verify image reference is valid
-        run: |
-          if [ -z "$BUILT_IMAGE_TAG" ] || [ -z "$BUILT_IMAGE_NAME" ] || [ -z "$SCANNED_IMAGE" ]; then
-            echo "ERROR: One or more required env vars are missing!"
-            exit 1
-          fi
-          echo "✅ Validated image: $SCANNED_IMAGE"
-
-      - name: Run Trivy vulnerability scanner (table output)
+      - name: Run Trivy security scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.SCANNED_IMAGE }}
+          image-ref: ${{ needs.build.outputs.image-tag }}
           format: table
-          exit-code: 0  # Prevents job failure
+          exit-code: 0
 
-      - name: Run Trivy and generate SARIF report
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.SCANNED_IMAGE }}
-          format: sarif
-          output: trivy-results.sarif
-        continue-on-error: true
-
-      - name: Upload SARIF results as artifact (since GitHub Security UI is unavailable)
+      - name: Upload scan results
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-sarif-report
+          name: security-scan-results
           path: trivy-results.sarif
+        continue-on-error: true
 
-
-  # Job 4: Deploy to Development (Feature branches)
-  deploy-dev:
-    name: 🚀 Deploy to Dev 
-    runs-on: ubuntu-latest
-    needs: [test, build, security]
-    if: github.ref != 'refs/heads/main' && github.event_name == 'push'
-    environment: development
-    env:
-      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
-      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Update Dev Kubernetes manifest
-        run: |
-          DEPLOYMENT_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
-          echo "Updating dev deployment with image: ${DEPLOYMENT_IMAGE}"
-          
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${DEPLOYMENT_IMAGE}|" k8s/deployment.yaml
-          # Add dev-specific configurations
-          sed -i 's|replicas: 1|replicas: 1|' k8s/deployment.yaml
-
-      - name: Commit dev manifest changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🔧 [DEV] Update image tag to ${{ env.BUILT_IMAGE_TAG }}"
-          file_pattern: k8s/deployment.yaml
-          branch: ${{ github.head_ref }}
-
-  # Job 5: Deploy to Production (Main branch only)
-  deploy-prod:
-    name: 🌟 Deploy to Production
+  # Job 4: Update Config Repository (GitOps)
+  update-config:
+    name: 🔄 Update Config Repo
     runs-on: ubuntu-latest
     needs: [test, build, security]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production  # GitHub Environment protection
-    env:
-      BUILT_IMAGE_TAG: ${{ needs.build.outputs.short-sha }}
-      BUILT_IMAGE_NAME: ${{ vars.IMAGE_NAME || 'dockerakilesh/number-game' }}
     steps:
-      - name: Checkout code
+      - name: Checkout config repository
         uses: actions/checkout@v4
         with:
+          repository: ${{ env.CONFIG_REPO }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          path: config-repo
 
-      - name: Update Production Kubernetes manifest
+      - name: Update production deployment
         run: |
-          DEPLOYMENT_IMAGE="${BUILT_IMAGE_NAME}:${BUILT_IMAGE_TAG}"
-          echo "Updating production deployment with image: ${DEPLOYMENT_IMAGE}"
+          cd config-repo
           
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${DEPLOYMENT_IMAGE}|" k8s/deployment.yaml
-          # Production-specific configurations
-          sed -i 's|replicas: 1|replicas: 3|' k8s/deployment.yaml
+          # Update image tag in production deployment
+          sed -i "s|image: ${IMAGE_NAME}:.*|image: ${{ needs.build.outputs.image-tag }}|" environments/production/deployment.yaml
+          
+          # Verify the change
+          echo "Updated deployment.yaml:"
+          cat environments/production/deployment.yaml | grep image
+          
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Commit and push changes
+          git add environments/production/deployment.yaml
+          git commit -m "🚀 Update production image to ${{ needs.build.outputs.image-tag }}
 
-      - name: Commit production manifest changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🚀 [PROD] Update image tag to ${{ env.BUILT_IMAGE_TAG }}"
-          file_pattern: k8s/deployment.yaml
+          Triggered by: ${{ github.event.head_commit.message }}
+          Commit: ${{ github.sha }}
+          Build: ${{ github.run_number }}"
+          
+          git push
 
+      - name: Update development deployment (if develop branch)
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          cd config-repo
+          
+          # Update image tag in development deployment
+          sed -i "s|image: ${IMAGE_NAME}:.*|image: ${{ needs.build.outputs.image-tag }}|" environments/development/deployment.yaml
+          
+          # Commit and push changes
+          git add environments/development/deployment.yaml
+          git commit -m "🔧 Update development image to ${{ needs.build.outputs.image-tag }}"
+          git push
+
+  # Job 5: Trigger ArgoCD Sync (Optional)
+  sync-argocd:
+    name: 🔄 Sync ArgoCD
+    runs-on: ubuntu-latest
+    needs: [update-config]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Trigger ArgoCD sync via API
+        run: |
+          echo "🔄 ArgoCD will automatically detect changes and sync"
+          echo "You can also manually sync in ArgoCD UI at https://localhost:8080"
+          echo ""
+          echo "Application: number-game-prod"
+          echo "New image: ${{ needs.build.outputs.image-tag }}"
+          
+          # Optional: If you want to trigger sync via API
+          # You would need ArgoCD API token and endpoint
+          # curl -X POST "https://argocd.example.com/api/v1/applications/number-game-prod/sync" \
+          #      -H "Authorization: Bearer $ARGOCD_TOKEN"
+
+  # Job 6: Create Release
+  release:
+    name: 📦 Create Release
+    runs-on: ubuntu-latest
+    needs: [build, update-config]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ env.BUILT_IMAGE_TAG }}
-          name: Release v${{ env.BUILT_IMAGE_TAG }}
+          tag_name: v${{ needs.build.outputs.short-sha }}
+          name: Release v${{ needs.build.outputs.short-sha }}
           body: |
-            🚀 **Production Deployment**
+            🚀 **GitOps Deployment with ArgoCD**
             
-            **Image:** `${{ env.BUILT_IMAGE_NAME }}:${{ env.BUILT_IMAGE_TAG }}`
+            **Docker Image:** `${{ needs.build.outputs.image-tag }}`
             **Commit:** ${{ github.sha }}
             **Changes:** ${{ github.event.head_commit.message }}
             
-            **Deployed to:** https://game.local
+            **GitOps Flow:**
+            ✅ Code updated → Docker image built → Config repo updated → ArgoCD deploys
+            
+            **Access:**
+            - 🎮 Game: http://game.local
+            - 📊 Metrics: http://game.local/metrics
+            - 🎯 ArgoCD: https://localhost:8080
+            - 📈 Grafana: kubectl port-forward svc/monitoring-grafana 8000:80
+            
+            **Config Repository:**
+            - Production: https://github.com/${{ env.CONFIG_REPO }}/tree/main/environments/production
+            
+          generate_release_notes: true
 
-  # Job 6: Notification & Monitoring
+  # Job 7: Notification
   notify:
     name: 📢 Notify Teams
     runs-on: ubuntu-latest
-    needs: [deploy-prod, deploy-dev]
-    if: always()  # Run regardless of success/failure
+    needs: [update-config, sync-argocd, release]
+    if: always()
     steps:
-      - name: Notify deployment status
+      - name: GitOps deployment notification
         run: |
-          if [[ "${{ needs.deploy-prod.result }}" == "success" ]]; then
-            echo "✅ Production deployment successful!"
-            # Add Slack/Teams notification here
-          elif [[ "${{ needs.deploy-dev.result }}" == "success" ]]; then
-            echo "✅ Development deployment successful!"
+          if [[ "${{ needs.update-config.result }}" == "success" ]]; then
+            echo "✅ GitOps update successful!"
+            echo ""
+            echo "🔄 Config repository updated with new image"
+            echo "🎯 ArgoCD will automatically sync the changes"
+            echo "🎮 Game will be available at: http://game.local"
+            echo "📊 Metrics endpoint: http://game.local/metrics"
+            echo ""
+            echo "Next steps:"
+            echo "1. Check ArgoCD UI: https://localhost:8080"
+            echo "2. Verify application sync status"
+            echo "3. Monitor deployment in ArgoCD"
           else
-            echo "❌ Deployment failed!"
+            echo "❌ GitOps update failed!"
+            echo "Check the logs above for details"
           fi
