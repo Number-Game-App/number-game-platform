@@ -112,8 +112,10 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.IMAGE_TAG }}
             ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:build-${{ github.run_number }}
           labels: |
             org.opencontainers.image.title=Number Game
+            org.opencontainers.image.version=${{ steps.meta.outputs.SHORT_SHA }}
             org.opencontainers.image.description=Simple Number Game with Team Dashboards
             org.opencontainers.image.version=${{ steps.meta.outputs.BUILD_VERSION }}
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
