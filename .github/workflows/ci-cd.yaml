@@ -64,19 +64,15 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BRANCH_NAME=${GITHUB_REF##*/}
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-
+          
           if [[ "$BRANCH_NAME" == "main" ]]; then
             ENVIRONMENT="production"
-            TAG="latest"
+            TAG="build-${{ github.run_number }}"  # Use build number consistently
           elif [[ "$BRANCH_NAME" == "develop" ]]; then
             ENVIRONMENT="development"
-            TAG="dev-${SHORT_SHA}"
-          else
-            ENVIRONMENT="feature"
-            TAG="feat-${SHORT_SHA}"
+            TAG="dev-build-${{ github.run_number }}"
           fi
-
+          
           IMAGE_TAG="${IMAGE_NAME}:${TAG}"
 
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
@@ -171,9 +167,9 @@ jobs:
             echo "Updating ${ENVIRONMENT} environment..."
             
             if [[ "$ENVIRONMENT" == "production" ]]; then
-              sed -i "s|tag: \".*\"|tag: \"${SHORT_SHA}\"|" environments/production/values.yaml
+              sed -i "s|tag: \".*\"|tag: \"build-${{ github.run_number }}\"|" environments/production/values.yaml
             elif [[ "$ENVIRONMENT" == "development" ]]; then
-              sed -i "s|tag: \".*\"|tag: \"dev-${SHORT_SHA}\"|" environments/development/values.yaml
+              sed -i "s|tag: \".*\"|tag: \"dev-build-${{ github.run_number }}\"|" environments/development/values.yaml
             fi
             
             git config --local user.email "gitops@company.com"
