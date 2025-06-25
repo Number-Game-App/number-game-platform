@@ -32,12 +32,12 @@ jobs:
       - name: Validate HTML
         run: |
           sudo apt-get update && sudo apt-get install -y tidy
-          tidy -q -e game-service/index.html || echo "HTML validation completed"
+          tidy -q -e app/index.html || echo "HTML validation completed"
 
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: game-service/Dockerfile
+          dockerfile: app/Dockerfile
           failure-threshold: error
 
       - name: Validate Helm Chart
@@ -102,7 +102,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./game-service
+          context: ./app
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
