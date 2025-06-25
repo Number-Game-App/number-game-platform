@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: dockerakilesh/number-game
-  tag: "dev"
+  tag: "latest"
   pullPolicy: IfNotPresent
 
 service:
