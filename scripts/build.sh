@@ -10,7 +10,7 @@ TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
 echo "Building ${IMAGE_NAME}:${TAG}"
 
 # Build image
-docker build -t "${IMAGE_NAME}:${TAG}" game-service/
+docker build -t "${IMAGE_NAME}:${TAG}" app/
 docker tag "${IMAGE_NAME}:${TAG}" "${IMAGE_NAME}:dev"
 docker tag "${IMAGE_NAME}:${TAG}" "${IMAGE_NAME}:latest"
 
