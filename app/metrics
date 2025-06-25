@@ -1,0 +1,16 @@
+# HELP games_started_total Number of games started
+# TYPE games_started_total counter
+games_started_total 25
+
+# HELP games_won_total Number of games won  
+# TYPE games_won_total counter
+games_won_total 8
+
+# HELP game_duration_seconds Game duration in seconds
+# TYPE game_duration_seconds histogram
+game_duration_seconds_sum 1200
+game_duration_seconds_count 25
+
+# HELP current_games_in_progress Games currently being played
+# TYPE current_games_in_progress gauge
+current_games_in_progress 2
