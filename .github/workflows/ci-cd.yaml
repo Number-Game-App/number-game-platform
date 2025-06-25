@@ -42,8 +42,8 @@ jobs:
 
       - name: Validate Helm Chart
         run: |
-          helm lint helm-chart/
-          helm template test helm-chart/ --values helm-chart/values/development.yaml
+          helm lint helm/
+          helm template test helm/ --values helm/values/development.yaml
 
   # Job 2: Build & Push Container
   build:
